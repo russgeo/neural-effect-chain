@@ -116,7 +116,7 @@ def create_data(num_samples, dry_tone_path):
     # Create an empty list to store the data
     data = []
     with AudioFile(dry_tone_path) as f:
-        dry_tone = f.read(f.samplerate)
+        dry_tone = f.read(f.samplerate*f.duration)
         # Loop over the number of samples
         for i in range(num_samples):
             wet_tone_data = {}
@@ -145,10 +145,11 @@ def create_data(num_samples, dry_tone_path):
                 new_effect = effect(**params_to_vals)
                 # Add the effect to the pedalboard
                 pedalboard.append(new_effect)
+                params_to_vals['Order'] = j
                 # Add the effect and corresponding params to the dictionary
                 wet_tone_data[effect_name] = params_to_vals
 
-            wet_tone = pedalboard(dry_tone, f.samplerate)
+            wet_tone = pedalboard(dry_tone, f.samplerate * f.duration)
             # Save the wet tone to a file
             with AudioFile(f'data/wet_tones/output_{i}.wav','w',f.samplerate,f.num_channels) as w:
                 w.write(wet_tone)
