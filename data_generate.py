@@ -4,7 +4,8 @@ import random
 import numpy as np
 import pandas as pd
 import json
-
+import librosa
+import skimage
 # Create a list of all the effects
 effects = [Delay, Gain, Chorus, Reverb, Distortion, Compressor, Phaser, NoiseGate, PitchShift, PeakFilter, LowpassFilter, LowShelfFilter, Limiter, LadderFilter, HighpassFilter, HighShelfFilter, Clipping, Invert]
 # Create a mapping of effect names to their parameters and max/min values of said parameters
@@ -150,9 +151,9 @@ def create_data(num_samples, dry_tone_path):
                 wet_tone_data[effect_name] = params_to_vals
 
             wet_tone = pedalboard(dry_tone, f.samplerate * f.duration)
-            # Save the wet tone to a file
-            with AudioFile(f'data/wet_tones/output_{i}.wav','w',f.samplerate,f.num_channels) as w:
-                w.write(wet_tone)
+            mel_spec = librosa.feature.melspectrogram(y=wet_tone, sr=f.samplerate)
+            spectrogram_db = librosa.power_to_db(mel_spec, ref=np.max)
+            np.save(f'data/spectrograms/output_{i}.npy', spectrogram_db)
             # Append the data to the list
             data.append(wet_tone_data)
     # Return the data
@@ -160,4 +161,7 @@ def create_data(num_samples, dry_tone_path):
 
 
 data = create_data(5, 'data/dry_tones/Electric1.wav')
+json_data = json.dumps(data)
+with open('data/data.json', 'w') as f:
+    f.write(json_data)
 pd.DataFrame.from_records(data).to_csv('data/data.csv', index=False)
