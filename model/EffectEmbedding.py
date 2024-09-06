@@ -47,7 +47,7 @@ class EffectEmbedding(nn.Module):
         # Create a mask for the effect parameters
         self.param_mask = torch.tensor([1 if i < num_params else 0 for i in range(self.max_params)])
         # Create a positional encoding for the effect
-        self.positional_encoding = nn.Embedding(self.max_effects, embedding_dim)
+        self.positional_encoding = nn.Linear(self.max_effects, embedding_dim)
         # Create embedding from effect parameters
         self.param_embed = nn.Linear(self.max_params, embedding_dim)
         # Create a 
