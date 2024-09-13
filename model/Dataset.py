@@ -28,7 +28,13 @@ class Effect():
     
     
 class EffectsChain(Dataset):
-    def __init__(self, effects, dry_tone_path, wet_tone_path):
+    def __init__(self, effects, dry_tone_path, wet_tone_path, max_effects):
+        assert len(effects) <= max_effects, "The number of effects in the chain must be less than or equal to the maximum number of effects"
+        # pad effects chaain to be the length of max_effects
+        if len(effects) < max_effects:
+            for i in range(max_effects-len(effects)):
+                effects.append(Effect(-1, None, max_effects, "None", None, None))
+        
         self.effects = effects
         self.dry_tone_path = dry_tone_path
         self.wet_tone_path = wet_tone_path

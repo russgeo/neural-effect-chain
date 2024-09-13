@@ -28,7 +28,7 @@ class CrossAttentionFeatureFusion(nn.Module):
         key = self.key(parameters)
         value = self.value(parameters)
         # Split the heads for multihead attention
-        query = query.reshape(batch_size, seq_len,self.n_heads,self.head_dim)
+        query = query.reshape(batch_size, self.head_dim,self.n_heads)
         key = key.reshape(batch_size, seq_len,self.n_heads,self.head_dim)
         value = value.reshape(batch_size, seq_len / self.n_heads,self.n_heads,self.head_dim)
         # Compute the attention
