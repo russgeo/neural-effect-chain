@@ -113,7 +113,7 @@ effects_parameters = {
 #         "q": (0.1, 10)
 #     },
 
-def create_data(num_samples, dry_tone_path):
+def create_data(num_samples, dry_tone_path, effects):
     # Create an empty list to store the data
     data = []
     with AudioFile(dry_tone_path) as f:
@@ -126,9 +126,9 @@ def create_data(num_samples, dry_tone_path):
             # Create a new pedalboard
             pedalboard = Pedalboard()
             # Randomly select a number of effects to add to the pedalboard
-            num_effects = random.randint(1, 10)
+            num_effects = random.randint(1, len(effects))
             # Create a dictionary to the effects used and their parameters
-            for j in range(num_effects):
+            for j in range(len(num_effects)):
                 # Randomly select an effect to add
                 effect = random.choice(effects)
                 # Get the effect name

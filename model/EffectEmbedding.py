@@ -22,42 +22,25 @@ class CrossAttentionFeatureFusion(nn.Module):
         self.n_heads = n_heads
         return
     
-    def forward(self, effect, parameters):
-        batch_size, seq_len = effect.shape
-        query = self.query(effect)
+    def forward(self, effects_chain, parameters):
+        batch_size, seq_len, = effects_chain.shape
+        query = self.query(effects_chain)
         key = self.key(parameters)
         value = self.value(parameters)
         # Split the heads for multihead attention
         query = query.reshape(batch_size, self.head_dim,self.n_heads)
-        key = key.reshape(batch_size, seq_len,self.n_heads,self.head_dim)
-        value = value.reshape(batch_size, seq_len / self.n_heads,self.n_heads,self.head_dim)
+        key = key.reshape(batch_size, self.head_dim,self.n_heads)
+        value = value.reshape(batch_size, self.head_dim,self.n_heads)
         # Compute the attention
         attention = self.softmax(torch.matmul(query, key.reshape(-1)) / math.sqrt(self.embedding_dims))
         attn_output = torch.matmul(attention, value)
         return attn_output
     
-def positionalencoding1d(d_model, length):
-    """
-    Source: https://github.com/wzlxjtu/PositionalEncoding2D/blob/master/positionalembedding2d.py 
-    :param d_model: dimension of the model
-    :param length: length of positions
-    :return: length*d_model position matrix
-    """
-    if d_model % 2 != 0:
-        raise ValueError("Cannot use sin/cos positional encoding with "
-                         "odd dim (got dim={:d})".format(d_model))
-    pe = torch.zeros(length, d_model)
-    position = torch.arange(0, length).unsqueeze(1)
-    div_term = torch.exp((torch.arange(0, d_model, 2, dtype=torch.float) *
-                         -(math.log(10000.0) / d_model)))
-    pe[:, 0::2] = torch.sin(position.float() * div_term)
-    pe[:, 1::2] = torch.cos(position.float() * div_term)
-    return pe 
 
     
 
 class EffectEmbedding(nn.Module):
-    def __init__(self, max_effects, max_effect_params, num_params,seq_order,attn_heads=8, embedding_dim=768):
+    def __init__(self, max_effects, total_params, num_params,seq_order,attn_heads=8, embedding_dim=768):
         '''
         Create an Embedding Representation of an Effect and its Parameters
         Inputs: 
@@ -68,19 +51,36 @@ class EffectEmbedding(nn.Module):
         super(EffectEmbedding, self).__init__()
         
         self.num_params = num_params
-        self.max_params = max_effect_params
+        self.total_params = total_params
         self.max_effects = max_effects
-        self.pos_encodings = positionalencoding1d(embedding_dim, max_effects)
+        self.pos_encodings = self.positionalencoding1d(embedding_dim, max_effects)
         self.seq_order = seq_order
         self.embedding_dim = embedding_dim
         self.cross_attention = CrossAttentionFeatureFusion(attn_heads,embedding_dim)
-        # Create embedding from one-hot encoded Effect
-        self.effect_embed = nn.Linear(self.max_effects, embedding_dim)
+        # Create embedding from one-hot encoded Effect. len(effect) == max_effects
+        self.effect_embed = nn.Linear(max_effects, embedding_dim)
         # Create embedding from effect parameters
-        self.param_embed = nn.Linear(self.max_params, embedding_dim)
+        self.param_embed = nn.Linear(total_params, embedding_dim)
         # Create a final linear layer to output the embedding
         self.final = nn.Linear(embedding_dim, embedding_dim)
         return
+    def positionalencoding1d(self, d_model, length):
+        """
+        Source: https://github.com/wzlxjtu/PositionalEncoding2D/blob/master/positionalembedding2d.py 
+        :param d_model: dimension of the model
+        :param length: length of positions
+        :return: length*d_model position matrix
+        """
+        if d_model % 2 != 0:
+            raise ValueError("Cannot use sin/cos positional encoding with "
+                             "odd dim (got dim={:d})".format(d_model))
+        pe = torch.zeros(length, d_model)
+        position = torch.arange(0, length).unsqueeze(1)
+        div_term = torch.exp((torch.arange(0, d_model, 2, dtype=torch.float) *
+                             -(math.log(10000.0) / d_model)))
+        pe[:, 0::2] = torch.sin(position.float() * div_term)
+        pe[:, 1::2] = torch.cos(position.float() * div_term)
+        return pe 
     
     def forward(self, effect, parameters):
         # Embed the effect
@@ -99,11 +99,17 @@ class EffectEmbedding(nn.Module):
 if __name__ == "__main__":
     # Test the Effect Embedding
     max_effects = 3
-    max_params = 10
-    reverb = Effect(0, [1,2,3], max_effects, "Reverb", max_params, [0,1,2])
-    delay = Effect(1, [4,5,6], max_effects, "Delay", max_params, [3,4,5])
-    chain = EffectsChain([reverb, delay], "dry.wav", "wet.wav")
-    effect_embedding = EffectEmbedding(max_effects, max_params, 3, 1)
-    out = effect_embedding(chain[0]['effect'], chain[0]['parameters'])
+    total_params = 10
+    reverb = Effect(0, [1,2,3], max_effects, "Reverb", total_params, [0,1,2])
+    delay = Effect(1, [4,5,6], max_effects, "Delay", total_params, [3,4,5])
+    effects = [reverb,delay]
+    chain = EffectsChain(effects, "dry.wav", "wet.wav",max_effects,total_params)
+    print(chain.effects)
+    print(chain.parameters)
+    print(chain.names)
+
+    # Test the Effect Embedding
+    test = EffectEmbedding(max_effects, total_params, total_params,torch.tensor([0,1,2]))
+    out = test(chain.effects, chain.parameters)
     print(out.shape)
-    print(out)
+    
