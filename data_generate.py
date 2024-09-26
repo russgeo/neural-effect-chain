@@ -1,14 +1,13 @@
 from pedalboard import Pedalboard, Delay, Gain, Chorus, Reverb, Distortion, Compressor, Mix, Phaser, NoiseGate, PitchShift, PeakFilter, LowpassFilter, LowShelfFilter, Limiter, LadderFilter, IIRFilter, HighpassFilter, HighShelfFilter, GSMFullRateCompressor, Convolution, Clipping, Invert
-from pedalboard.io import AudioFile
+from pedalboard.io import ReadableAudioFile
 import random
-import numpy as np
-import pandas as pd
-import json
-import librosa
-import skimage
+import pickle
+from transformers import AutoFeatureExtractor
+
+from model.Dataset import Effect, EffectsChain, EffectChainDataset
 # Create a list of all the effects
-effects = [Delay, Gain, Chorus, Reverb, Distortion, Compressor, Phaser, NoiseGate, PitchShift, PeakFilter, LowpassFilter, LowShelfFilter, Limiter, LadderFilter, HighpassFilter, HighShelfFilter, Clipping, Invert]
-# Create a mapping of effect names to their parameters and max/min values of said parameters
+effects = [Delay, Gain, Chorus, Reverb, Distortion, Compressor, Phaser, NoiseGate, PitchShift, PeakFilter, LowpassFilter, LowShelfFilter, Limiter, LadderFilter, HighpassFilter, HighShelfFilter, Clipping]
+# Create -a mapping of effect names to their parameters and max/min values of said parameters
 #TODO: adjust max min values to more accurate values
 effects_parameters = {
     "Reverb": {
@@ -89,11 +88,10 @@ effects_parameters = {
     },
     "Clipping": {
         "threshold_db": (-1, 1)
-    },
-    "Invert": {
     }
     }
-
+# "Invert": {
+#     }
 # "Convolution": {
 #         "impulse_response": (0, 1),
 #         "mix": (0, 1)
@@ -113,55 +111,179 @@ effects_parameters = {
 #         "q": (0.1, 10)
 #     },
 
-def create_data(num_samples, dry_tone_path, effects):
-    # Create an empty list to store the data
-    data = []
-    with AudioFile(dry_tone_path) as f:
-        dry_tone = f.read(f.samplerate*f.duration)
-        # Loop over the number of samples
-        for i in range(num_samples):
-            wet_tone_data = {}
-            wet_tone_data['dry_tone_path'] = dry_tone_path
-            wet_tone_data['wet_tone_path'] = f'data/wet_tones/output_{i}.wav'
-            # Create a new pedalboard
-            pedalboard = Pedalboard()
-            # Randomly select a number of effects to add to the pedalboard
-            num_effects = random.randint(1, len(effects))
-            # Create a dictionary to the effects used and their parameters
-            for j in range(len(num_effects)):
-                # Randomly select an effect to add
-                effect = random.choice(effects)
-                # Get the effect name
-                effect_name = effect.__name__
-                # Get the effect parameters
-                parameters = effects_parameters[effect_name].keys()
-                # Loop over the parameters
-                params_to_vals = {}
-                for param in parameters:
-                    # Randomly select a value for the parameter
-                    value = random.uniform(effects_parameters[effect_name][param][0], effects_parameters[effect_name][param][1])
-                    # Add the parameter to the dictionary
-                    params_to_vals[param] = value
-                # Create a new effect with the parameters
-                new_effect = effect(**params_to_vals)
-                # Add the effect to the pedalboard
-                pedalboard.append(new_effect)
-                params_to_vals['Order'] = j
-                # Add the effect and corresponding params to the dictionary
-                wet_tone_data[effect_name] = params_to_vals
+class DataGenerator():
+    def __init__(self, effects_to_parameters: dict, effects: list) -> None:
+        self.effects_to_parameters = effects_to_parameters
+        # calculate the total number of possible parameters
+        total_parameters = 0
+        for effect, params in effects_parameters.items():
+            total_parameters += len(params)
+        self.total_parameters = total_parameters
+        # Create a dictionary to store the indices of the parameters for each effect
+        effect_to_param_indices = {}
+        current_index = 0
+        for effect, params in effects_parameters.items():
+            num_params = len(params)
+            if num_params > 0:
+                effect_to_param_indices[effect] = list(range(current_index, current_index + num_params))
+                current_index += num_params
+        self.effect_to_param_indices = effect_to_param_indices
+        # map each effect to a one hot encoding index
+        self.effect_to_index = {effect.__name__: i for i, effect in enumerate(effects)}
+        self.effects = effects
+        return
+    def create_data(self,
+                    num_samples: int, 
+                    dry_tone_path: str, 
+                    max_chain_length: int,
+                    feature_extractor=AutoFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593"),
+                    sample_rate=16000
+                    ):
 
-            wet_tone = pedalboard(dry_tone, f.samplerate * f.duration)
-            mel_spec = librosa.feature.melspectrogram(y=wet_tone, sr=f.samplerate)
-            spectrogram_db = librosa.power_to_db(mel_spec, ref=np.max)
-            np.save(f'data/spectrograms/output_{i}.npy', spectrogram_db)
-            # Append the data to the list
-            data.append(wet_tone_data)
-    # Return the data
-    return data
+        # Create an empty list to store the data
+        data = []
+        with ReadableAudioFile(dry_tone_path) as f:
+            # re sample the audio file to match the sample rate, pretrained model is sampled at 16000
+            re_sampled = f.resampled_to(sample_rate)
+            dry_tone = re_sampled.read(int(sample_rate * f.duration))
+            re_sampled.close()
+            f.close()
+            # Loop over the number of samples
+            for i in range(num_samples):
+                wet_tone_data = {}
+                wet_tone_data['dry_tone_path'] = dry_tone_path
+                wet_tone_data['wet_tone_path'] = f'data/wet_tones/output_{i}.wav'
+                # Create a new pedalboard
+                pedalboard = Pedalboard()
+                # Randomly select a number of effects to add to the pedalboard
+                num_effects = random.randint(1, max_chain_length)
+                # Create a dictionary to the effects used and their parameters
+                effect_list = []
+                for j in range(num_effects):
+                    # Randomly select an effect to add
+                    effect = random.choice(self.effects)
+                    # Get the effect name
+                    effect_name = effect.__name__
+                    # Get the effect parameters
+                    parameters = self.effects_to_parameters[effect_name].keys()
+                    # Create a dictionary to store the effect data (parameters and order)
+                    effect_data = {}
+                    # Loop over the parameters
+                    parameter_values = []
+                    for param in parameters:
+                        # Randomly select a value for the parameter
+                        value = random.uniform(self.effects_to_parameters[effect_name][param][0], self.effects_to_parameters[effect_name][param][1])
+                        # Add the parameter to the dictionary
+                        effect_data[param] = value
+                        parameter_values.append(value)
+                    # Create a new effect with the parameters
+                    new_effect = effect(**effect_data)
+                    # Add the effect to the pedalboard
+                    pedalboard.append(new_effect)
 
+                    # Add the effect and corresponding params to the dictionary
+                    effect_list.append(Effect(self.effect_to_index[effect_name],parameter_values,len(self.effects),effect_name,self.total_parameters,self.effect_to_param_indices[effect_name],j))
 
-data = create_data(5, 'data/dry_tones/Electric1.wav')
-json_data = json.dumps(data)
-with open('data/data.json', 'w') as f:
-    f.write(json_data)
-pd.DataFrame.from_records(data).to_csv('data/data.csv', index=False)
+                effect_chain = EffectsChain(effect_list, dry_tone_path, wet_tone_data['wet_tone_path'], len(self.effects),max_chain_length, self.total_parameters)
+                wet_tone = pedalboard(dry_tone, sample_rate * f.duration)
+                # we don't need to save the actual wet tone because it can be recreated with the dry tone + effect data
+                wet_tone_features = feature_extractor(wet_tone, sampling_rate=sample_rate, return_tensors="pt")
+                wet_tone_data['wet_tone_features'] = wet_tone_features
+                wet_tone_data['effects_chain'] = effect_chain
+                # Append the data to the list
+                data.append(wet_tone_data)
+        # Return the data
+        dataset = EffectChainDataset(data)
+        return dataset
+    
+if __name__ == "__main__":
+    generator = DataGenerator(effects_parameters,effects)
+    dataset = generator.create_data(10,'data/dry_tones/Electric1.wav',5)
+    print(dataset[0])
+# # calculate the total number of parameters
+# total_parameters = 0
+# for effect, params in effects_parameters.items():
+#     total_parameters += len(params)
+# # Create a dictionary to store the indices of the parameters for each effect
+# effect_to_param_indices = {}
+# current_index = 0
+# for effect, params in effects_parameters.items():
+#     num_params = len(params)
+#     if num_params > 0:
+#         effect_to_param_indices[effect] = list(range(current_index, current_index + num_params))
+#         current_index += num_params
+# # Create a dictionary mapping each effect to a one hot encoding index
+# effect_to_index = {effect.__name__: i for i, effect in enumerate(effects_)}
+
+# def create_data(num_samples: int, 
+#                 dry_tone_path: str, 
+#                 effects: list, 
+#                 max_chain_length: int,
+#                 effects_to_parameters: dict, 
+#                 effect_to_param_indices = effect_to_param_indices,
+#                 total_parameters = total_parameters,
+#                 effect_to_index = effect_to_index,
+#                 feature_extractor=AutoFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593"),
+#                 sample_rate=16000
+#                 ):
+    
+#     # Create an empty list to store the data
+#     data = []
+#     with ReadableAudioFile(dry_tone_path) as f:
+#         # re sample the audio file to match the sample rate, pretrained model is sampled at 16000
+#         re_sampled = f.resampled_to(sample_rate)
+#         dry_tone = re_sampled.read(int(sample_rate * f.duration))
+#         re_sampled.close()
+#         f.close()
+#         # Loop over the number of samples
+#         for i in range(num_samples):
+#             wet_tone_data = {}
+#             wet_tone_data['dry_tone_path'] = dry_tone_path
+#             wet_tone_data['wet_tone_path'] = f'data/wet_tones/output_{i}.wav'
+#             # Create a new pedalboard
+#             pedalboard = Pedalboard()
+#             # Randomly select a number of effects to add to the pedalboard
+#             num_effects = random.randint(1, max_chain_length)
+#             # Create a dictionary to the effects used and their parameters
+#             effect_list = []
+#             for j in range(num_effects):
+#                 # Randomly select an effect to add
+#                 effect = random.choice(effects)
+#                 # Get the effect name
+#                 effect_name = effect.__name__
+#                 # Get the effect parameters
+#                 parameters = effects_to_parameters[effect_name].keys()
+#                 # Create a dictionary to store the effect data (parameters and order)
+#                 effect_data = {}
+#                 # Loop over the parameters
+#                 parameter_values = []
+#                 for param in parameters:
+#                     # Randomly select a value for the parameter
+#                     value = random.uniform(effects_to_parameters[effect_name][param][0], effects_to_parameters[effect_name][param][1])
+#                     # Add the parameter to the dictionary
+#                     effect_data[param] = value
+#                     parameter_values.append(value)
+#                 # Create a new effect with the parameters
+#                 new_effect = effect(**effect_data)
+#                 # Add the effect to the pedalboard
+#                 pedalboard.append(new_effect)
+
+#                 # Add the effect and corresponding params to the dictionary
+#                 effect_list.append(Effect(effect_to_index[effect_name],parameter_values,len(effects),effect_name,total_parameters,effect_to_param_indices[effect_name],j))
+
+#             effect_chain = EffectsChain(effect_list, dry_tone_path, wet_tone_data['wet_tone_path'], len(effects),max_chain_length, total_parameters)
+#             wet_tone = pedalboard(dry_tone, sample_rate * f.duration)
+#             # we don't need to save the actual wet tone because it can be recreated with the dry tone + effect data
+#             wet_tone_features = feature_extractor(wet_tone, sampling_rate=sample_rate, return_tensors="pt")
+#             wet_tone_data['wet_tone_features'] = wet_tone_features
+#             wet_tone_data['effects_chain'] = effect_chain
+#             # Append the data to the list
+#             data.append(wet_tone_data)
+#     # Return the data
+#     dataset = EffectChainDataset(data)
+#     return dataset
+
+# dataset = create_data(10, 'data/dry_tones/Electric1.wav',effects_,5,effects_to_parameters=effects_parameters)
+# # with open("data/sample_dataset.pkl") as f:
+# #     pickle.dump(dataset)
+# print(dataset)

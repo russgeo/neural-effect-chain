@@ -1,4 +1,5 @@
 from model.EffectDecoder import EffectDecoder
+from model.ParameterDecoder import ParameterDecoder
 import numpy as np
 import librosa
 from transformers import AutoFeatureExtractor
@@ -13,6 +14,9 @@ dry_spec = spectrogram_feature_extractor(dry_y,sampling_rate = dry_sr,return_ten
 wet_spec = spectrogram_feature_extractor(wet_y,sampling_rate = wet_sr,return_tensors="pt")
 
 effect_decoder = EffectDecoder(dry_sr,wet_sr,10)
-output = effect_decoder(dry_spec,wet_spec)
+output, effect = effect_decoder(dry_spec,wet_spec)
 
-print(output)
+param_decoder = ParameterDecoder(10,{'reverb':np.array([1,1,1,1,1,1,1,0,0,0])},'reverb')
+param_output = param_decoder(output)
+print(effect)
+print(param_output)
