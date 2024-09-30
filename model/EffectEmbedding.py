@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import math
-from Dataset import Effect, EffectsChain
+from dataset.Dataset import Effect, EffectsChain
 class CrossAttentionFeatureFusion(nn.Module):
     def __init__(self, n_heads, embedding_dims=768):
         '''
