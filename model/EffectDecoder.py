@@ -7,7 +7,7 @@ import os
 
 class EffectDecoder(nn.Module):
     
-    def __init__(self,input_sr,target_sr, num_effects, attn_heads=8, embedding_dim=768, **kwargs):
+    def __init__(self, num_effects, attn_heads=8, embedding_dim=768, **kwargs):
         '''
         Create an Embedding Representation of an Effect and its Parameters
         Inputs: 
@@ -18,8 +18,6 @@ class EffectDecoder(nn.Module):
         super(EffectDecoder, self).__init__()
         self.spectrogram_embedding_model = ASTModel.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
         self.attn_heads = attn_heads
-        self.input_sr = input_sr
-        self.target_sr = target_sr
         # fine tune ontop of pretrained model
         self.input_embedding = nn.Linear(embedding_dim,embedding_dim)
         self.target_embedding = nn.Linear(embedding_dim,embedding_dim)
