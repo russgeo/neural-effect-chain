@@ -16,8 +16,8 @@
 
 import crepe
 from ddsp import core
-from core import safe_log
-from core import tf_float32
+from ddsp.core import safe_log
+from ddsp.core import tf_float32
 import gin
 import librosa
 import numpy as np

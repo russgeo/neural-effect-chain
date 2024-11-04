@@ -13,10 +13,9 @@
 # limitations under the License.
 
 """Library of encoder objects."""
-
 import ddsp
-import spectral_ops
-import nn
+from ddsp import spectral_ops
+from ddsp import nn
 import gin
 import tensorflow.compat.v2 as tf
 

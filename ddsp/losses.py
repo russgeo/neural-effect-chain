@@ -18,9 +18,9 @@ import functools
 from typing import Dict, Text
 
 import crepe
-import core
-import dags
-import spectral_ops
+from ddsp import core
+from ddsp import dags
+from ddsp import spectral_ops
 from ddsp.core import hz_to_midi
 from ddsp.core import safe_divide
 from ddsp.core import tf_float32
