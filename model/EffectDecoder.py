@@ -29,12 +29,14 @@ class EffectDecoder(nn.Module):
         self.softmax = softmax
         return
     
-    def forward(self, input_features, target_features):
+    def forward(self, input_features,input_f0,input_loudness, target_features, target_f0, target_loudness):
         '''
         Forward pass of the model
         Inputs:
         - input_spectrogram: the input spectrogram
+        - input_f0: the input f0
         - target_spectrogram: the target spectrogram
+        - target_f0: the target f0
         Outputs:
         - output: the output of the model
         '''
