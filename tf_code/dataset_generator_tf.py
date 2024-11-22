@@ -2,11 +2,16 @@ from pedalboard import Pedalboard, Delay, Gain, Chorus, Reverb, Distortion, Comp
 from pedalboard.io import ReadableAudioFile
 import random
 import pickle
+import tqdm
 from transformers import AutoFeatureExtractor
 import os
-from dataset.Dataset import Effect, EffectsChain, EffectChainDataset
+#from dataset.dataset import Effect, EffectsChain, EffectChainDataset
+from tf_dataset import TFEffectChainDataset, TFEffectsChain, TFEffect
+from feature_extractor import FeatureExtractor
+import numpy as np
 # Create a list of all the effects
 effects = [Delay, Gain, Chorus, Reverb, Distortion, Compressor, Phaser, NoiseGate, PitchShift, PeakFilter, LowpassFilter, LowShelfFilter, Limiter, LadderFilter, HighpassFilter, HighShelfFilter, Clipping]
+#import tensorflow as tf
 # Create -a mapping of effect names to their parameters and max/min values of said parameters
 #TODO: adjust max min values to more accurate values
 effects_parameters = {
@@ -90,31 +95,17 @@ effects_parameters = {
         "threshold_db": (-1, 1)
     }
     }
-# "Invert": {
-#     }
-# "Convolution": {
-#         "impulse_response": (0, 1),
-#         "mix": (0, 1)
-#     }
-# "Mix": {
-#         "mix": (0, 1)
-#     }
-# "GSMFullRateCompressor": {
-#         "threshold_db": (-100, 0),
-#         "ratio": (1, 20),
-#         "attack_ms": (0.1, 100),
-#         "release_ms": (10, 1000),
-#         "makeup_gain_db": (0, 24)
-#     }
-# "IIRFilter": {
-#         "cutoff_frequency_hz": (20, 20000),
-#         "q": (0.1, 10)
-#     },
-
-class DataGenerator():
+class DataGenerator_tf():
     def __init__(self, 
                  effects_to_parameters: dict,
                  effects: list) -> None:
+        '''
+        Args:
+            effects_to_parameters: dictionary of effect names and their parameters and max/min values
+            effects: list of effects to use
+        Synthetic data generator class, pass in the effects and their parameters to 
+        create a synthetic dataset of randomly applied effects with random parameters
+        '''
         self.effects_to_parameters = effects_to_parameters
         # calculate the total number of possible parameters
         total_parameters = 0
@@ -139,18 +130,37 @@ class DataGenerator():
                     dry_tone_dir: str,
                     dry_tones: list, 
                     max_chain_length: int,
-                    feature_extractor=AutoFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593"),
+                    feature_extractor=FeatureExtractor(),
                     sample_rate=16000
-                    ) -> EffectChainDataset:
+                    ):
         # Create an empty list to store the data
+        """
+        Args:
+            num_samples: number of samples to create per dry tone
+            dry_tone_dir: base directory of dry tones
+            dry_tones: list of dry tone filenames
+            max_chain_length: maximum length of the effect chain
+            feature_extractor: feature extractor to use
+            sample_rate: sample rate to resample the audio to
+
+        Returns:
+            EffectChainDataset: dataset of effect chains
+        """
         data = []
-        for dry_tone_path in dry_tones:
+        for dry_tone_path in tqdm.tqdm(dry_tones):
             name,ext = dry_tone_path.split('.')
             dry_tone_path = os.path.join(dry_tone_dir, dry_tone_path)
             with ReadableAudioFile(dry_tone_path) as f:
-                # re sample the audio file to match the sample rate, pretrained model is sampled at 16000
                 re_sampled = f.resampled_to(sample_rate)
-                dry_tone = re_sampled.read(int(sample_rate * f.duration))
+                # Add padding or truncate to exact length
+                desired_length = int(sample_rate * 4)
+                dry_tone = re_sampled.read(desired_length)
+                if len(dry_tone[0]) < desired_length:
+                    # Pad with zeros if audio is too short
+                    dry_tone = np.pad(dry_tone, (0, desired_length - len(dry_tone[0])))
+                elif len(dry_tone) > desired_length:
+                    # Truncate if audio is too long
+                    dry_tone = dry_tone[:desired_length]
                 re_sampled.close()
                 f.close()
             # Loop over the number of samples
@@ -186,22 +196,22 @@ class DataGenerator():
                     # Add the effect to the pedalboard
                     pedalboard.append(new_effect)
                     # Add the effect and corresponding params to the dictionary
-                    effect_list.append(Effect(self.effect_to_index[effect_name],parameter_values,len(self.effects),effect_name,self.total_parameters,self.effect_to_param_indices[effect_name],j))
-                effect_chain = EffectsChain(effect_list, dry_tone_path, wet_tone_data['wet_tone_path'], len(self.effects),max_chain_length, self.total_parameters)
-                wet_tone = pedalboard(dry_tone, sample_rate * f.duration)
+                    effect_list.append(TFEffect(self.effect_to_index[effect_name],parameter_values,len(self.effects),effect_name,self.total_parameters,self.effect_to_param_indices[effect_name],j))
+                
+                effect_chain = TFEffectsChain(effect_list, dry_tone_path, wet_tone_data['wet_tone_path'], len(self.effects),max_chain_length, self.total_parameters)
+                wet_tone = pedalboard(dry_tone, sample_rate * 4) #4 for 4 second audio clips
                 # we don't need to save the actual wet tone because it can be recreated with the dry tone + effect data
-                wet_tone_features = feature_extractor(wet_tone, sampling_rate=sample_rate, return_tensors="pt")
+                with tf.device('/cpu:0'):
+                    wet_tone_features = feature_extractor.get_log_mel_spectrogram(wet_tone)
+                wet_tone_loudness = feature_extractor.get_loudness(wet_tone)
+                wet_tone_f0 = feature_extractor.get_f0_crepe(wet_tone)
                 wet_tone_data['wet_tone_features'] = wet_tone_features
+                wet_tone_data['wet_tone_loudness'] = wet_tone_loudness
+                wet_tone_data['wet_tone_f0'] = wet_tone_f0['f0_hz']
                 wet_tone_data['effects'] = effect_chain.effects
                 wet_tone_data['parameters'] = effect_chain.parameters
                 wet_tone_data['names'] = effect_chain.names
                 # Append the data to the list
                 data.append(wet_tone_data)
-        # Return the data
-        dataset = EffectChainDataset(data)
-        return dataset
-    
-if __name__ == "__main__":
-    generator = DataGenerator(effects_parameters,effects)
-    dataset = generator.create_data(10,'data/dry_tones',5)
-    print(dataset[0])
+        
+        return data

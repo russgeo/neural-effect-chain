@@ -29,15 +29,18 @@ class EffectDecoder(nn.Module):
         self.softmax = softmax
         return
     
-    def forward(self, input_features, target_features):
+    def forward(self, input_features,input_f0,input_loudness, target_features, target_f0, target_loudness):
         '''
         Forward pass of the model
         Inputs:
         - input_spectrogram: the input spectrogram
+        - input_f0: the input f0
         - target_spectrogram: the target spectrogram
+        - target_f0: the target f0
         Outputs:
         - output: the output of the model
         '''
+        self.features = torch.cat((input_f0, input_loudness), dim=-1)
         input_embedding = self.input_embedding(self.spectrogram_embedding_model(**input_features).pooler_output)
         target_embedding = self.target_embedding(self.spectrogram_embedding_model(**target_features).pooler_output)
         
@@ -47,3 +50,14 @@ class EffectDecoder(nn.Module):
         # predict the effect
         effect = self.softmax(self.cls_effect(output),dim=-1)
         return output, effect
+    
+    def mlp_z(self, input):
+        '''
+        Multi Layer Perceptron for z embedding
+        '''
+        return
+    def mlp_features(self, input):
+        '''
+        Multi Layer Perceptron for feature embedding (f_0, loudness)
+        '''
+        return
