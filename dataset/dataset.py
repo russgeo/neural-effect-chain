@@ -56,11 +56,12 @@ class EffectsChain():
         return {"effects":self.effects, "parameters":self.parameters, "dry_tone_path":self.dry_tone_path, "wet_tone_path":self.wet_tone_path}
 
 class EffectChainDataset(Dataset):
-    def __init__(self, data):
+    def __init__(self, data, dry_tone_features=True):
         '''
         Pass in a list of EffectsChain objects
         '''
         self.data = data
+        self.dry_tone_features = dry_tone_features
         return
     
     def __len__(self):
@@ -77,4 +78,8 @@ class EffectChainDataset(Dataset):
         names = entry['names']
         effects = entry['effects']
         parameters = entry['parameters']
-        return {"dry_tone_path":dry_tone_path,"wet_tone_path":wet_tone_path,"wet_tone_features":wet_tone_features,"effect_names":names,"effects":effects, "parameters":parameters, "index":idx}
+        if self.dry_tone_features:
+            dry_tone_feat = entry['dry_tone_features']
+            return {"dry_tone_path":dry_tone_path,"wet_tone_path":wet_tone_path,"wet_tone_features":wet_tone_features,"dry_tone_features":dry_tone_feat,"effect_names":names,"effects":effects, "parameters":parameters, "index":idx}
+        else:
+            return {"dry_tone_path":dry_tone_path,"wet_tone_path":wet_tone_path,"wet_tone_features":wet_tone_features,"effect_names":names,"effects":effects, "parameters":parameters, "index":idx}

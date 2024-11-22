@@ -203,7 +203,7 @@ class SinusoidalToHarmonicEncoder(nn.DictLayer):
     self.hd_out = tfkl.Dense(n_harmonics)
     self.f0_out = tfkl.Dense(f0_depth)
 
-  def call(self, sin_freqs, sin_amps) -> ['harm_amp', 'harm_dist', 'f0_hz']:
+  def call(self, sin_freqs, sin_amps):
     """Converts (sin_freqs, sin_amps) to (f0, amp, hd).
 
     Args:

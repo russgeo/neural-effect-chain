@@ -30,7 +30,55 @@ CREPE_FRAME_SIZE = 1024
 F0_RANGE = 127.0  # MIDI.
 DB_RANGE = core.DB_RANGE  # dB (80.0).
 
+def compute_loudness_torch(audio,
+               sample_rate=16000,
+               frame_rate=250,
+               n_fft=512,
+               range_db=DB_RANGE,
+               ref_db=0.0,
+               padding='center'):
+  """Perceptual loudness (weighted power) in dB using PyTorch.
 
+  Args:
+    audio: PyTorch tensor. Shape [batch_size, audio_length] or [audio_length,].
+    sample_rate: Audio sample rate in Hz.
+    frame_rate: Rate of loudness frames in Hz.
+    n_fft: FFT window size.
+    range_db: Sets the dynamic range of loudness in decibels.
+    ref_db: Sets the reference maximum perceptual loudness.
+    padding: 'same', 'valid', or 'center'.
+
+  Returns:
+    Loudness in decibels. Shape [batch_size, n_frames] or [n_frames,].
+  """
+  # Ensure audio is a 2D tensor
+  if len(audio.shape) == 1:
+    audio = audio.unsqueeze(0)
+
+  # Pad audio
+  hop_size = sample_rate // frame_rate
+  pad_amount = (n_fft - hop_size) // 2
+  audio = torch.nn.functional.pad(audio, (pad_amount, pad_amount), mode='constant')
+
+  # Compute STFT
+  stft = torch.stft(audio, n_fft=n_fft, hop_length=hop_size, win_length=n_fft, return_complex=True)
+  power = stft.abs() ** 2
+
+  # Perceptual weighting
+  frequencies = torch.linspace(0, sample_rate // 2, n_fft // 2 + 1)
+  a_weighting = torch.tensor(librosa.A_weighting(frequencies.numpy()), device=audio.device)
+  a_weighting = 10 ** (a_weighting / 10)
+  power = power * a_weighting
+
+  # Average over frequencies (weighted power per bin)
+  avg_power = power.mean(dim=-1)
+  loudness = 10 * torch.log10(avg_power + 1e-10)  # Convert to dB
+
+  # Normalize loudness
+  loudness = loudness - ref_db
+  loudness = torch.clamp(loudness, min=-range_db)
+
+  return loudness
 def stft(audio, frame_size=2048, overlap=0.75, pad_end=True):
   """Differentiable stft in tensorflow, computed in batch."""
   # Remove channel dim if present.

@@ -164,3 +164,6 @@ cython_debug/
 neural-chain-dataset/
 data/
 tone-grabber-venv/
+tone-grabber-torch/
+playground.ipynb
+saved_models/
